@@ -1,0 +1,10 @@
+CC = gcc
+CFLAGS = -Wall -Wextra -pedantic -std=c99
+
+all: myshell
+
+myshell: src/myshell.c
+	$(CC) $(CFLAGS) -o myshell src/myshell.c
+
+clean:
+	rm -f myshell
