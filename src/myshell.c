@@ -5,15 +5,59 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <errno.h>
-<<<<<<< HEAD
-=======
 #include <fcntl.h>
->>>>>>> 8c9c6eb (Implementation of IO redirection and piping)
 
 void sigchld_handler(int sig) {
   int savedErrno = errno;
   while(waitpid(-1, NULL, WNOHANG) > 0 );
   errno = savedErrno;
+}
+
+void stringCleanup(char* buf) {
+  // Get rid of new-line
+  char * nl = strchr(buf, '\n');
+  if (nl) {
+    *nl = 0;
+  }
+  // Get rid of comments
+  char * hash = strchr(buf, '#');
+  if(hash) {
+   *hash = 0;
+  }
+}
+
+void tokenization(char* buf, char* arguments[], int* numberOfArguments) {
+	char *token = strtok(buf, " \t\r\n");
+	while(token != NULL && *numberOfArguments < 100) {
+		arguments[(*numberOfArguments)++] = token;
+		token = strtok(NULL, " \t\r\n");
+	}
+}
+
+int checkBackground(char* arguments[], int* numberOfArguments) {
+  if(*numberOfArguments > 0 && strcmp(arguments[(*numberOfArguments) - 1], "&") == 0) {
+    arguments[--(*numberOfArguments)] = 0;
+    return 1;
+  }
+  return 0;
+}
+
+void splitPipes(char* arguments[], int numberOfArguments, char** cmds[], int* cmdCount) {
+  cmds[(*cmdCount)++] = &arguments[0];
+  for(int i = 0; i < numberOfArguments; i++) {
+    if(arguments[i] != NULL && strcmp(arguments[i], "|") == 0) {
+      arguments[i] = NULL;
+      cmds[(*cmdCount)++] = &arguments[i+1];
+    }
+  }
+}
+
+void initPipes(int cmdCount, int pipefds[]) {
+  for(int i = 0; i < cmdCount - 1; i++) {
+    if(pipe(pipefds + i * 2) < 0) {
+      perror("pipe");
+    }
+  }
 }
 
 int main(int argc, char* argv[]) {
@@ -24,17 +68,7 @@ int main(int argc, char* argv[]) {
   sigaction(SIGCHLD, &sa, NULL);
 
 	int interactive = 1;
-<<<<<<< HEAD
 	
-	// Configure script running
-	if(argc > 1) {
-		interactive = 0;
-		if (freopen(argv[1], "r", stdin) == NULL)
-			return -1;
-	}
-  
-  char buf[1024];
-=======
 	// Configure script running
 	if(argc > 1) {
 		interactive = 0;
@@ -44,36 +78,17 @@ int main(int argc, char* argv[]) {
   
   char buf[1024];
   signal(SIGINT,SIG_IGN);
->>>>>>> 8c9c6eb (Implementation of IO redirection and piping)
 	while(1) {
-		if(interactive) printf("$ ");
+		if(interactive) printf("\n$ ");
 
 		// Read input
 		if(fgets(buf, 1024, stdin) == NULL) exit(0);
 	
-		// Get rid of new-line
-		char * nl = strchr(buf, '\n');
-		if (nl) *nl = 0;
-
-    // Get rid of comments
-    char * hash = strchr(buf, '#');
-    if(hash) *hash = 0;
-		
-		// Tokenization of arguments
+	  stringCleanup(buf);	
 		int numberOfArguments = 0;
-		char * arguments[100];
-<<<<<<< HEAD
-		char *token = strtok(buf, " ");
-		while(token != NULL && numberOfArguments < 100) {
-			arguments[numberOfArguments++] = token;
-			token = strtok(NULL, " ");
-=======
-		char *token = strtok(buf, " \t\r\n");
-		while(token != NULL && numberOfArguments < 100) {
-			arguments[numberOfArguments++] = token;
-			token = strtok(NULL, " \t\r\n");
->>>>>>> 8c9c6eb (Implementation of IO redirection and piping)
-		}
+	  char *arguments[101];
+	  tokenization(buf, arguments, &numberOfArguments);
+
     // Check for overflow on number of arguemnts
     if (numberOfArguments == 100) {
       fprintf(stderr, "Too many arguments for command! (Use less than 100)\n");
@@ -94,55 +109,34 @@ int main(int argc, char* argv[]) {
       continue;
     }
 
-    int background = 0;
-    // Check for background process (&)
-    if(strcmp(arguments[numberOfArguments - 1], "&") == 0) {
-      background = 1;
-      arguments[--numberOfArguments] = 0;
-    }
+    int background = checkBackground(arguments, &numberOfArguments);
 
     // Check for empty input (after deleting &)
     if(arguments[0] == NULL) continue;
-<<<<<<< HEAD
-		int pid = fork();
-	
-    if(pid == -1){
-      fprintf(stderr, "Error forking!\n");
-    }
-    else if(pid != 0) {
-      if(!background) waitpid(pid, NULL, 0);
-		}
-		else {
-			execvp(arguments[0], arguments);
-			fprintf(stderr, "Could not execute %s\n", arguments[0]);
-		  exit(1);
-    }
-	}
-=======
 
-    // Check for empty input (after IO search)
-    if(arguments[0] == NULL) continue;
-    
     // Splitting pipes per |
     char** cmds[16];
     int cmdCount = 0;
-    
-    cmds[cmdCount++] = &arguments[0];
-    for(int i = 0; i < numberOfArguments; i++) {
-      if(arguments[i] != NULL && strcmp(arguments[i], "|") == 0) {
-        arguments[i] = NULL;
-        cmds[cmdCount++] = &arguments[i+1];
-      }
-    }
+
+    splitPipes(arguments, numberOfArguments, cmds, &cmdCount);
+
     //Pipes for Pipes
-    int pipefds[2 * (cmdCount - 1)];
-    for(int i = 0; i < cmdCount - 1; i++) {
-      if(pipe(pipefds + i * 2) < 0) {
-        perror("pipe");
-      }
+    int pipefds[cmdCount > 1 ? 2 * (cmdCount - 1) : 1];
+    if(cmdCount > 1) {
+      initPipes(cmdCount, pipefds);
     }
+   
+    //Blocking SIGCHLD
+    sigset_t mask, prev_mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGCHLD);
+
+    if(!background) {
+      sigprocmask(SIG_BLOCK, &mask, &prev_mask);
+    }
+
     //Forking
-    pid_t pids[16];
+    pid_t pids[16] = {0};
     for(int i = 0; i < cmdCount; i++) {
       pids[i] = fork();
 
@@ -151,6 +145,10 @@ int main(int argc, char* argv[]) {
         break;
       }
       else if (pids[i] == 0) {
+        // reset SIGCHLD
+        if(!background) {
+          sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+        } 
         // take input from previous pipe
         if (i > 0) {
           dup2(pipefds[(i - 1) * 2], STDIN_FILENO);
@@ -189,7 +187,7 @@ int main(int argc, char* argv[]) {
         if(outputFile != NULL) {
           int fd = open(outputFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
           if(fd < 0) {
-            fprintf(stderr, "Failed to open output file");
+            perror("Failed to open output file");
             exit(1);
           }
           dup2(fd, STDOUT_FILENO);
@@ -199,7 +197,7 @@ int main(int argc, char* argv[]) {
 		    if(inputFile != NULL) {
           int fd = open(inputFile, O_RDONLY);
 		      if(fd < 0) {
-			      fprintf(stderr, "Failed to open input file");
+			      perror("Failed to open input file");
 		        exit(1);
           }
           dup2(fd, STDIN_FILENO);
@@ -207,6 +205,9 @@ int main(int argc, char* argv[]) {
         }
 
 	      signal(SIGINT, SIG_DFL);
+        if(cmds[i][0] == NULL) {
+          exit(0);
+        }
 		    execvp(cmds[i][0], cmds[i]);
 		    fprintf(stderr, "Could not execute %s\n", cmds[i][0]);
 		    exit(1);
@@ -219,10 +220,12 @@ int main(int argc, char* argv[]) {
 
     if(!background) {
       for(int i = 0; i < cmdCount; i++) {
-        waitpid(pids[i], NULL, 0);
+        if(pids[i] > 0) {
+          waitpid(pids[i], NULL, 0);
+        }
       }
+      sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     }
   }
->>>>>>> 8c9c6eb (Implementation of IO redirection and piping)
 	return 0;
 }
