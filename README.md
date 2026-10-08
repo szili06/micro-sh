@@ -13,6 +13,8 @@ A lightweight POSIX-compliant command-line interpreter implemented in C.
   - Asynchronous background jobs via a trailing `&`.
   - Signal-safe zombie child reaping using `SIGCHLD`, `sigaction` (`SA_RESTART`), and `waitpid()`.
 - **Parsing:** Handles inline comments (`#`), strips whitespace, and enforces argument bounds.
+- **I/O Redirection:** Handles redirection of STDIN and STDOUT(`<`, `>`)
+- **Pipeline chaining:** Supports piping of multiple (up to 16) commands (`|`)
 
 ## Getting Started
 
@@ -44,7 +46,4 @@ gcc -Wall -Wextra -pedantic -std=c99 -o myshell src/myshell.c
   ```
 
 ## Roadmap
-
-- [ ] I/O Redirection (`<`, `>`, `>>`)
-- [ ] Pipeline chaining (`|`)
 - [ ] Terminal job control & forward `SIGINT` (Ctrl+C) handling
