@@ -77,7 +77,12 @@ int main(int argc, char* argv[]) {
 	}
   
   char buf[1024];
-  signal(SIGINT,SIG_IGN);
+  // Signal handling
+  signal(SIGINT, SIG_IGN);
+  signal(SIGQUIT, SIG_IGN);
+  signal(SIGTSTP, SIG_IGN);
+  signal(SIGTTIN, SIG_IGN);
+  signal(SIGTTOU, SIG_IGN);
 	while(1) {
 		if(interactive) printf("\n$ ");
 
@@ -137,6 +142,8 @@ int main(int argc, char* argv[]) {
 
     //Forking
     pid_t pids[16] = {0};
+    pid_t pgid = 0;
+
     for(int i = 0; i < cmdCount; i++) {
       pids[i] = fork();
 
@@ -145,10 +152,23 @@ int main(int argc, char* argv[]) {
         break;
       }
       else if (pids[i] == 0) {
-        // reset SIGCHLD
+        if(i == 0) {
+          setpgid(0, 0);
+        } else {
+          setpgid(0, pgid);
+        }
+
         if(!background) {
+          signal(SIGINT, SIG_DFL);
+          signal(SIGQUIT, SIG_DFL);
+          signal(SIGTSTP, SIG_DFL);
           sigprocmask(SIG_SETMASK, &prev_mask, NULL);
-        } 
+        }
+        else {
+          signal(SIGINT, SIG_IGN);
+          signal(SIGQUIT, SIG_IGN);
+          signal(SIGTSTP, SIG_IGN);
+        }
         // take input from previous pipe
         if (i > 0) {
           dup2(pipefds[(i - 1) * 2], STDIN_FILENO);
@@ -182,7 +202,15 @@ int main(int argc, char* argv[]) {
           }
         }
         cmds[i][writeIdx] = NULL;
-
+        
+        // handling background /dev/null redirect for the first command
+        if(background && inputFile == NULL && i == 0) {
+          int devnull = open("/dev/null", O_RDONLY);
+          if(devnull >= 0) {
+            dup2(devnull, STDIN_FILENO);
+            close(devnull);
+          }
+        }
         // handle IO redirects
         if(outputFile != NULL) {
           int fd = open(outputFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -204,13 +232,22 @@ int main(int argc, char* argv[]) {
           close(fd);
         }
 
-	      signal(SIGINT, SIG_DFL);
         if(cmds[i][0] == NULL) {
           exit(0);
         }
 		    execvp(cmds[i][0], cmds[i]);
 		    fprintf(stderr, "Could not execute %s\n", cmds[i][0]);
 		    exit(1);
+      } else {
+        if(i == 0) {
+          pgid = pids[0];
+          setpgid(pids[0], pids[0]);
+          if(!background && interactive) {
+            tcsetpgrp(STDIN_FILENO, pgid);
+          }
+        } else {
+          setpgid(pids[i], pgid);
+        }
       }
     }
 
@@ -221,8 +258,13 @@ int main(int argc, char* argv[]) {
     if(!background) {
       for(int i = 0; i < cmdCount; i++) {
         if(pids[i] > 0) {
-          waitpid(pids[i], NULL, 0);
+          int status;
+          while(waitpid(pids[i], &status, 0) == -1 && errno == EINTR);
         }
+      }
+      // Reclaim terminal control for the shell
+      if(interactive) {
+        tcsetpgrp(STDIN_FILENO, getpgrp());
       }
       sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     }

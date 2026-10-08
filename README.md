@@ -15,6 +15,7 @@ A lightweight POSIX-compliant command-line interpreter implemented in C.
 - **Parsing:** Handles inline comments (`#`), strips whitespace, and enforces argument bounds.
 - **I/O Redirection:** Handles redirection of STDIN and STDOUT(`<`, `>`)
 - **Pipeline chaining:** Supports piping of multiple (up to 16) commands (`|`)
+- Terminal job control & forward `SIGINT` (Ctrl+C) handling
 
 ## Getting Started
 
@@ -43,7 +44,3 @@ gcc -Wall -Wextra -pedantic -std=c99 -o myshell src/myshell.c
 
   ```bash
   ./myshell script.sh
-  ```
-
-## Roadmap
-- [ ] Terminal job control & forward `SIGINT` (Ctrl+C) handling
