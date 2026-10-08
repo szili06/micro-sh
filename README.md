@@ -29,7 +29,7 @@ A lightweight POSIX-compliant command-line interpreter implemented in C.
 Compile with standard warnings and flags:
 
 ```bash
-gcc -Wall -Wextra -pedantic -std=c99 -o myshell src/myshell.c
+gcc -o myshell src/myshell.c
 ```
 
 ### Usage
