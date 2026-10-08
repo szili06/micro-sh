@@ -1,9 +1,0 @@
-# Compiled binaries
-myshell
-*.o
-
-# Editor temporary files
-*.swp
-*~
-.DS_Store
-.vscode/
